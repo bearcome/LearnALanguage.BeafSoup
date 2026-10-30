@@ -1,0 +1,160 @@
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Services
+@inject LearningApiClient Api
+@inject GuestProgressStore ProgressStore
+
+@if (Questions.Count == 0)
+{
+    <div class="state-card"><h2>还没有练习</h2><p>请先在课程内容中添加题目。</p></div>
+}
+else if (_finished)
+{
+    if (ProgressStore.StorageWarning is not null) { <p class="inline-error" role="alert">@ProgressStore.StorageWarning</p> }
+    <section class="result-card">
+        <span class="eyebrow">RUNDE ABGESCHLOSSEN</span>
+        <div class="result-score"><strong>@_sessionResults.Count(item => item.IsCorrect)</strong><span>/ @Questions.Count</span></div>
+        <h2>这一轮，答对了 @Accuracy%</h2>
+        <p>每次作答都已记录在本机。可以重练整套题，或回到课时查看词汇与语法。</p>
+        <div class="result-actions">
+            <button class="primary-button" @onclick="Restart">再练一遍</button>
+            @if (LessonId is not null) { <a class="secondary-button" href="lessons/@LessonId">返回课时</a> }
+            else { <a class="secondary-button" href="/">返回课程</a> }
+        </div>
+    </section>
+}
+else
+{
+    var question = Questions[_index];
+    if (ProgressStore.StorageWarning is not null) { <p class="inline-error" role="alert">@ProgressStore.StorageWarning</p> }
+    <section class="practice-workspace" @key="question.Id">
+        <div class="practice-progress">
+            <span>第 @(_index + 1) 题 <i>/</i> @Questions.Count</span>
+            <div class="progress-track"><span style="width:@((_index + 1) * 100.0 / Questions.Count)%"></span></div>
+            <span>本轮 @(_sessionResults.Count(item => item.IsCorrect)) 题正确</span>
+        </div>
+        <article class="question-card">
+            <div class="question-instruction">
+                <span>@question.Instruction</span>
+                @if (question.AudioUrl is not null) { <AudioButton AudioUrl="@question.AudioUrl" Label="题目音频" /> }
+            </div>
+            <h2 lang="de">@question.Prompt</h2>
+            <div class="option-list" role="group" aria-label="答案选项">
+                @foreach (var option in question.Options)
+                {
+                    <button class="option-button @OptionClass(option.Id)"
+                            disabled="@(_result is not null || _busy)"
+                            @onclick="() => SelectOption(option.Id)">
+                        <span class="option-letter">@option.Id.ToUpperInvariant()</span>
+                        <span lang="de">@option.Text</span>
+                        @if (_result?.CorrectOptionId == option.Id) { <span class="option-mark">✓</span> }
+                        else if (_result?.SelectedOptionId == option.Id) { <span class="option-mark">×</span> }
+                    </button>
+                }
+            </div>
+            @if (_error is not null) { <p class="inline-error" role="alert">@_error</p> }
+            @if (_result is not null)
+            {
+                <div class="answer-feedback @(_result.IsCorrect ? "is-correct" : "is-wrong")" role="status">
+                    <strong>@(_result.IsCorrect ? "回答正确 · +10 分" : "这题还差一点")</strong>
+                    @if (!_result.IsCorrect) { <p>正确答案：<span lang="de">@_result.CorrectOptionText</span></p> }
+                    <p>@_result.Explanation</p>
+                </div>
+            }
+            <div class="question-actions">
+                <span>@(_selected is null ? "请选择一个答案" : _result is null ? "已选择，可以提交" : "解析已展开")</span>
+                @if (_result is null)
+                {
+                    <button class="primary-button" disabled="@(_selected is null || _busy)" @onclick="GradeAsync">
+                        @(_busy ? "正在判分…" : "提交答案")
+                    </button>
+                }
+                else
+                {
+                    <button class="primary-button" @onclick="Next">@(_index == Questions.Count - 1 ? "查看结果" : "下一题") →</button>
+                }
+            </div>
+        </article>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<QuestionDto> Questions { get; set; } = default!;
+    [Parameter, EditorRequired] public string CourseId { get; set; } = default!;
+    [Parameter] public string? LessonId { get; set; }
+    private int _index;
+    private string? _selected;
+    private GradeResultDto? _result;
+    private bool _busy;
+    private bool _finished;
+    private string? _error;
+    private string? _loadedCourse;
+    private GuestProgressState _progress = new();
+    private readonly List<GradeResultDto> _sessionResults = [];
+    private readonly HashSet<string> _sessionAnswered = [];
+    private int Accuracy => Questions.Count == 0 ? 0 : (int)Math.Round(_sessionResults.Count(item => item.IsCorrect) * 100.0 / Questions.Count);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedCourse == CourseId) return;
+        _loadedCourse = CourseId;
+        _progress = await ProgressStore.LoadAsync(CourseId);
+    }
+
+    private void SelectOption(string optionId)
+    {
+        if (_result is not null) return;
+        _selected = optionId;
+    }
+
+    private async Task GradeAsync()
+    {
+        if (_selected is null || _busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var question = Questions[_index];
+            _result = await Api.GradeAsync(question.Id, _selected);
+            _sessionResults.Add(_result);
+            _sessionAnswered.Add(question.Id);
+            await ProgressStore.RecordAttemptAsync(_progress, question, _result);
+            if (LessonId is not null && Questions.All(item => _sessionAnswered.Contains(item.Id)))
+            {
+                await ProgressStore.MarkLessonCompleteAsync(_progress, LessonId);
+            }
+        }
+        catch (Exception exception) { _error = $"判分失败，请重试。{exception.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private void Next()
+    {
+        if (_result is null) return;
+        if (_index >= Questions.Count - 1) { _finished = true; return; }
+        _index++;
+        _selected = null;
+        _result = null;
+        _error = null;
+    }
+
+    private void Restart()
+    {
+        _index = 0;
+        _selected = null;
+        _result = null;
+        _error = null;
+        _finished = false;
+        _sessionResults.Clear();
+        _sessionAnswered.Clear();
+    }
+
+    private string OptionClass(string optionId)
+    {
+        if (_result is not null)
+        {
+            if (_result.CorrectOptionId == optionId) return "is-correct";
+            if (_result.SelectedOptionId == optionId) return "is-wrong";
+        }
+        return _selected == optionId ? "is-selected" : "";
+    }
+}

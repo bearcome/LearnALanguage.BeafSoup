@@ -1,0 +1,285 @@
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Services
+@inject AudioPlaybackService Audio
+@implements IDisposable
+
+<section class="dialogue-toolbar">
+    <div class="dialogue-modes">
+        <button class="mode-button @(_shadowing ? "is-active" : "")" @onclick="() => _shadowing = true">跟读模式</button>
+        <button class="mode-button @(_shadowing ? "" : "is-active")" @onclick="() => _shadowing = false">连续播放</button>
+        <label class="shadow-scale">跟读时间
+            <select value="@_shadowScale" @onchange="ChangeShadowScale">
+                <option value="0.75">短</option>
+                <option value="1">标准</option>
+                <option value="1.5">长</option>
+            </select>
+        </label>
+    </div>
+    <div class="dialogue-actions">
+        <button class="secondary-button" @onclick="RestartAsync" disabled="@(_state == PlayerState.Idle)">重头开始</button>
+        @if (_state == PlayerState.Idle)
+        {
+            <button class="primary-button" @onclick="PlayAllAsync">播放整段对话</button>
+        }
+        else
+        {
+            <button class="primary-button" @onclick="StopAsync">停止播放</button>
+        }
+    </div>
+</section>
+
+<section class="speaker-legend" aria-label="角色音色">
+    @foreach (var speaker in Dialogue.Speakers)
+    {
+        <span class="speaker-chip is-@speaker.Color" lang="de">@speaker.Name<small>@speaker.Role</small></span>
+    }
+    <span class="speaker-note">每个角色使用不同音色与语气，播放顺序与实际对话一致。</span>
+</section>
+
+@if (_error is not null) { <p class="inline-error" role="alert">@_error</p> }
+
+<div class="dialogue-turns">
+    @for (var index = 0; index < Dialogue.Turns.Count; index++)
+    {
+        var turn = Dialogue.Turns[index];
+        var speaker = SpeakerOf(turn);
+        var isActive = index == _activeIndex && _state != PlayerState.Idle;
+        <article class="dialogue-turn is-@speaker.Color @(isActive ? "is-active" : "")"
+                 data-turn="@turn.Id"
+                 data-state="@(isActive ? _state.ToString().ToLowerInvariant() : "idle")">
+            <div class="turn-head">
+                <span class="turn-avatar" lang="de">@speaker.Name</span>
+                <span class="turn-order">@($"{index + 1:00}")</span>
+                @if (isActive && _state == PlayerState.Speaking) { <span class="turn-flag">播放中</span> }
+                @if (isActive && _state == PlayerState.Shadowing) { <span class="turn-flag is-shadow">跟读中 @_shadowSecondsLeft 秒</span> }
+                @if (turn.AudioUrl is not null)
+                {
+                    <button class="audio-button is-compact" title="只播放这一句" aria-label="只播放这一句" @onclick="() => PlayTurnAsync(index)">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a3.5 3.5 0 0 0-1.5-2.87v5.74A3.5 3.5 0 0 0 16.5 12z" /></svg>
+                    </button>
+                }
+            </div>
+            <p class="turn-text" lang="de">
+                @foreach (var segment in turn.Segments)
+                {
+                    if (segment.VocabularyId is null && string.IsNullOrWhiteSpace(segment.Note) && segment.Morphology.Count == 0)
+                    {
+                        <span>@segment.Text</span>
+                    }
+                    else
+                    {
+                        <button class="sentence-token @(segment.VocabularyId is null ? "is-hint" : "") @(IsHinted(turn, segment) ? "is-selected" : "")"
+                                @onclick="() => ToggleHint(turn, segment)">@segment.Text</button>
+                    }
+                }
+            </p>
+            <button class="translation-toggle" @onclick="() => ToggleTranslation(turn.Id)">
+                @(IsTranslationShown(turn.Id) ? "隐藏中文" : "查看中文") <span aria-hidden="true">@(IsTranslationShown(turn.Id) ? "−" : "+")</span>
+            </button>
+            @if (IsTranslationShown(turn.Id))
+            {
+                <p class="sentence-translation">@turn.Translation</p>
+                @if (!string.IsNullOrWhiteSpace(turn.Note)) { <p class="sentence-note">@turn.Note</p> }
+            }
+            @if (_hintTurnId == turn.Id && _hintSegment is not null)
+            {
+                var word = _hintSegment.VocabularyId is null ? null : Dialogue.Vocabulary.FirstOrDefault(item => item.Id == _hintSegment.VocabularyId);
+                <div class="word-hint">
+                    <div class="hint-heading">
+                        <div><span class="hint-surface" lang="de">@_hintSegment.Text.Trim()</span>@if (word is not null) { <small>@word.PartOfSpeech</small> }</div>
+                        @if (word?.AudioUrl is not null) { <AudioButton AudioUrl="@word.AudioUrl" Label="原型" Compact="true" /> }
+                    </div>
+                    @if (word is not null) { <strong>@word.Translation</strong><dl><div><dt>词典原型</dt><dd lang="de">@word.Lemma</dd></div></dl> }
+                    <dl>
+                        @foreach (var feature in _hintSegment.Morphology)
+                        {
+                            <div><dt>@FeatureName(feature.Key)</dt><dd>@feature.Value</dd></div>
+                        }
+                    </dl>
+                    @if (!string.IsNullOrWhiteSpace(_hintSegment.Note)) { <p>@_hintSegment.Note</p> }
+                    else if (!string.IsNullOrWhiteSpace(word?.Note)) { <p>@word.Note</p> }
+                </div>
+            }
+        </article>
+    }
+</div>
+
+@if (_state == PlayerState.Finished)
+{
+    <div class="dialogue-finished">
+        <strong>这一遍播放完成。</strong>
+        <span>可以重头再听一遍，或切到跟读模式，在每句之后跟着说。</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public DialogueDetailDto Dialogue { get; set; } = default!;
+
+    private enum PlayerState { Idle, Speaking, Shadowing, Finished }
+
+    private PlayerState _state = PlayerState.Idle;
+    private int _activeIndex = -1;
+    private int _shadowSecondsLeft;
+    private bool _shadowing = true;
+    private double _shadowScale = 1;
+    private string? _error;
+    private string? _hintTurnId;
+    private SentenceSegmentDto? _hintSegment;
+    private readonly HashSet<string> _shownTranslations = [];
+    private CancellationTokenSource? _cancellation;
+
+    private DialogueSpeakerDto SpeakerOf(DialogueTurnDto turn) =>
+        Dialogue.Speakers.First(speaker => speaker.Id == turn.SpeakerId);
+
+    private async Task PlayAllAsync()
+    {
+        await StopAsync();
+        _cancellation = new CancellationTokenSource();
+        var token = _cancellation.Token;
+        _error = null;
+        _state = PlayerState.Speaking;
+
+        try
+        {
+            for (var index = 0; index < Dialogue.Turns.Count; index++)
+            {
+                token.ThrowIfCancellationRequested();
+                var turn = Dialogue.Turns[index];
+                _activeIndex = index;
+                _state = PlayerState.Speaking;
+                StateHasChanged();
+
+                if (turn.AudioUrl is not null)
+                {
+                    var outcome = await Audio.PlayToEndAsync(turn.AudioUrl);
+                    token.ThrowIfCancellationRequested();
+                    if (outcome == "error")
+                    {
+                        _error = $"第 {index + 1} 句音频无法播放，请稍后重试。";
+                        break;
+                    }
+
+                    if (outcome == "stopped") break;
+                }
+
+                if (_shadowing)
+                {
+                    if (!await ShadowAsync(turn.PauseAfterMs, token)) break;
+                }
+                else if (index < Dialogue.Turns.Count - 1)
+                {
+                    await Task.Delay(350, token);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Stopped by the learner.
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _state = PlayerState.Finished;
+                _activeIndex = -1;
+            }
+        }
+    }
+
+    private async Task<bool> ShadowAsync(int pauseMs, CancellationToken token)
+    {
+        var total = (int)Math.Round(pauseMs * _shadowScale);
+        _state = PlayerState.Shadowing;
+        for (var remaining = (int)Math.Ceiling(total / 1000.0); remaining > 0; remaining--)
+        {
+            _shadowSecondsLeft = remaining;
+            StateHasChanged();
+            await Task.Delay(1000, token);
+        }
+
+        _shadowSecondsLeft = 0;
+        return true;
+    }
+
+    private async Task PlayTurnAsync(int index)
+    {
+        await StopAsync();
+        var turn = Dialogue.Turns[index];
+        if (turn.AudioUrl is null) return;
+        _cancellation = new CancellationTokenSource();
+        _activeIndex = index;
+        _state = PlayerState.Speaking;
+        StateHasChanged();
+        try
+        {
+            var outcome = await Audio.PlayToEndAsync(turn.AudioUrl);
+            if (outcome == "error") _error = "这一句音频无法播放，请稍后重试。";
+            else if (outcome == "ended" && _shadowing) await ShadowAsync(turn.PauseAfterMs, _cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Stopped by the learner.
+        }
+        finally
+        {
+            _state = PlayerState.Idle;
+            _activeIndex = -1;
+        }
+    }
+
+    private async Task StopAsync()
+    {
+        _cancellation?.Cancel();
+        _cancellation?.Dispose();
+        _cancellation = null;
+        await Audio.StopAsync();
+        _state = PlayerState.Idle;
+        _activeIndex = -1;
+        _shadowSecondsLeft = 0;
+    }
+
+    private async Task RestartAsync() => await PlayAllAsync();
+
+    private void ChangeShadowScale(ChangeEventArgs args) =>
+        _shadowScale = double.TryParse(args.Value?.ToString(), out var value) ? value : 1;
+
+    private void ToggleTranslation(string turnId)
+    {
+        if (!_shownTranslations.Add(turnId)) _shownTranslations.Remove(turnId);
+    }
+
+    private bool IsTranslationShown(string turnId) => _shownTranslations.Contains(turnId);
+
+    private void ToggleHint(DialogueTurnDto turn, SentenceSegmentDto segment)
+    {
+        if (_hintTurnId == turn.Id && _hintSegment == segment)
+        {
+            _hintTurnId = null;
+            _hintSegment = null;
+            return;
+        }
+
+        _hintTurnId = turn.Id;
+        _hintSegment = segment;
+    }
+
+    private bool IsHinted(DialogueTurnDto turn, SentenceSegmentDto segment) =>
+        _hintTurnId == turn.Id && _hintSegment == segment;
+
+    private static string FeatureName(string key) => key switch
+    {
+        "person" => "人称",
+        "number" => "数",
+        "case" => "格",
+        "gender" => "性",
+        "tense" => "时态",
+        "form" => "形式",
+        _ => key
+    };
+
+    public void Dispose()
+    {
+        _cancellation?.Cancel();
+        _cancellation?.Dispose();
+    }
+}

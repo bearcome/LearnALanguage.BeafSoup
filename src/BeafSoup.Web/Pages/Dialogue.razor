@@ -1,0 +1,55 @@
+@page "/dialogues/{DialogueId}"
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Components
+@using BeafSoup.Web.Services
+@inject LearningApiClient Api
+
+<PageTitle>@(_dialogue?.Title ?? "场景对话") · BeafSoup</PageTitle>
+
+@if (_error is not null)
+{
+    <div class="state-card error-state"><h1>对话无法加载</h1><p>@_error</p></div>
+}
+else if (_dialogue is null)
+{
+    <div class="loading-state"><span class="loading-dot"></span>正在准备对话…</div>
+}
+else
+{
+    <div class="lesson-breadcrumb"><a href="/">我的课程</a><span>/</span><a href="dialogues">场景对话</a><span>/</span><span>第 @_dialogue.Order 段</span></div>
+    <section class="lesson-heading">
+        <div>
+            <span class="eyebrow">DIALOG @_dialogue.Order.ToString("00") · A0—A1</span>
+            <h1>@_dialogue.Title</h1>
+            <p>@_dialogue.Scenario</p>
+        </div>
+        <a class="secondary-button" href="practice">去练习题目 ↗</a>
+    </section>
+
+    <section class="objectives-strip">
+        <strong>说完你能</strong>
+        <div><span>@_dialogue.Goal</span></div>
+    </section>
+
+    <DialoguePlayer Dialogue="@_dialogue" />
+}
+
+@code {
+    [Parameter] public string DialogueId { get; set; } = "";
+    private DialogueDetailDto? _dialogue;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _dialogue = null;
+        _error = null;
+        try
+        {
+            _dialogue = await Api.GetDialogueAsync(DialogueId);
+        }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+        }
+    }
+}

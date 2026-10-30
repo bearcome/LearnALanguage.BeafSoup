@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\BeafSoup.Contracts\BeafSoup.Contracts.csproj" />
+    <ProjectReference Include="..\BeafSoup.Content\BeafSoup.Content.csproj" />
+    <ProjectReference Include="..\BeafSoup.Data\BeafSoup.Data.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,91 @@
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Components
+
+<article class="sentence-card">
+    <div class="sentence-card-top">
+        <span class="sentence-index" lang="de">SATZ</span>
+        <AudioButton AudioUrl="@Sentence.AudioUrl" Label="整句" Compact="true" />
+    </div>
+    <p class="german-sentence" lang="de">
+        @foreach (var segment in Sentence.Segments)
+        {
+            if (segment.VocabularyId is null && string.IsNullOrWhiteSpace(segment.Note) && segment.Morphology.Count == 0)
+            {
+                <span>@segment.Text</span>
+            }
+            else
+            {
+                <button class="sentence-token @(segment.VocabularyId is null ? "is-hint" : "") @(_selected == segment ? "is-selected" : "")"
+                        @onclick="() => SelectSegment(segment)">@segment.Text</button>
+            }
+        }
+    </p>
+    <button class="translation-toggle" @onclick="() => _showTranslation = !_showTranslation">
+        @(_showTranslation ? "隐藏中文" : "查看中文") <span aria-hidden="true">@(_showTranslation ? "−" : "+")</span>
+    </button>
+    @if (_showTranslation)
+    {
+        <p class="sentence-translation">@Sentence.Translation</p>
+        @if (!string.IsNullOrWhiteSpace(Sentence.Note)) { <p class="sentence-note">@Sentence.Note</p> }
+    }
+    @if (_selected is not null && (_selectedWord is not null || !string.IsNullOrWhiteSpace(_selected.Note) || _selected.Morphology.Count > 0))
+    {
+        <div class="word-hint">
+            <div class="hint-heading">
+                <div>
+                    <span class="hint-surface" lang="de">@_selected.Text.Trim()</span>
+                    @if (_selectedWord is not null) { <small>@_selectedWord.PartOfSpeech</small> }
+                </div>
+                @if (_selectedWord is not null) { <AudioButton AudioUrl="@_selectedWord.AudioUrl" Label="原型" Compact="true" /> }
+            </div>
+            @if (_selectedWord is not null)
+            {
+                <strong>@_selectedWord.Translation</strong>
+                <dl>
+                    <div><dt>词典原型</dt><dd lang="de">@_selectedWord.Lemma</dd></div>
+                    @if (_selectedWord.Gender is not null) { <div><dt>语法性</dt><dd>@_selectedWord.Gender</dd></div> }
+                    @foreach (var feature in _selected.Morphology)
+                    {
+                        <div><dt>@FeatureName(feature.Key)</dt><dd>@feature.Value</dd></div>
+                    }
+                </dl>
+            }
+            else
+            {
+                <dl>
+                    @foreach (var feature in _selected.Morphology)
+                    {
+                        <div><dt>@FeatureName(feature.Key)</dt><dd>@feature.Value</dd></div>
+                    }
+                </dl>
+            }
+            @if (!string.IsNullOrWhiteSpace(_selected.Note)) { <p>@_selected.Note</p> }
+            else if (!string.IsNullOrWhiteSpace(_selectedWord?.Note)) { <p>@_selectedWord.Note</p> }
+        </div>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired] public SentenceDto Sentence { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<VocabularyDto> Vocabulary { get; set; } = default!;
+    private SentenceSegmentDto? _selected;
+    private VocabularyDto? _selectedWord;
+    private bool _showTranslation;
+
+    private void SelectSegment(SentenceSegmentDto segment)
+    {
+        _selected = _selected == segment ? null : segment;
+        _selectedWord = _selected is null ? null : Vocabulary.FirstOrDefault(word => word.Id == segment.VocabularyId);
+    }
+
+    private static string FeatureName(string key) => key switch
+    {
+        "person" => "人称",
+        "number" => "数",
+        "case" => "格",
+        "gender" => "性",
+        "tense" => "时态",
+        "form" => "形式",
+        _ => key
+    };
+}

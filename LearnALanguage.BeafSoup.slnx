@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BeafSoup.Api/BeafSoup.Api.csproj" />
+    <Project Path="src/BeafSoup.AudioGenerator/BeafSoup.AudioGenerator.csproj" />
+    <Project Path="src/BeafSoup.Content/BeafSoup.Content.csproj" />
+    <Project Path="src/BeafSoup.Contracts/BeafSoup.Contracts.csproj" />
+    <Project Path="src/BeafSoup.Data/BeafSoup.Data.csproj" />
+    <Project Path="src/BeafSoup.Web/BeafSoup.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BeafSoup.Tests/BeafSoup.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,9 @@
+Google Cloud TTS 
+
+
+https://speech.microsoft.com/portal/1bac48f5a4744d2baf663ca4e131f2a3/voicegallery
+https://learn.microsoft.com/en-us/azure/ai-services/speech-service/get-started-text-to-speech?tabs=new-foundry%2Cwindows&pivots=programming-language-csharp
+
+
+https://portal.azure.com/#home  每月免费0.5M
+nvidia 免费模型

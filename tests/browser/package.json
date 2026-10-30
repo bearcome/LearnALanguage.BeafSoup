@@ -1,0 +1,10 @@
+{
+  "name": "beafsoup-browser-checks",
+  "private": true,
+  "scripts": {
+    "test": "node full-course.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
+  }
+}

@@ -1,0 +1,70 @@
+@page "/dialogues"
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Services
+@inject LearningApiClient Api
+
+<PageTitle>场景对话 · BeafSoup</PageTitle>
+
+@if (_error is not null)
+{
+    <div class="state-card error-state"><h1>对话无法加载</h1><p>@_error</p></div>
+}
+else if (_dialogues is null)
+{
+    <div class="loading-state"><span class="loading-dot"></span>正在准备对话…</div>
+}
+else
+{
+    <section class="practice-heading">
+        <div>
+            <span class="eyebrow">DIALOGE · HÖREN UND SPRECHEN</span>
+            <h1>场景对话</h1>
+            <p>三段贴近日常的德语对话。每个角色使用不同音色和语气，可以整段顺序播放，也可以在跟读模式里留出时间自己说一遍。</p>
+        </div>
+    </section>
+
+    <div class="dialogue-grid">
+        @foreach (var dialogue in _dialogues)
+        {
+            <a class="dialogue-card" href="dialogues/@dialogue.Id">
+                <div class="dialogue-card-top">
+                    <span class="lesson-number">@dialogue.Order.ToString("00")</span>
+                    <span class="lesson-status">@dialogue.TurnCount 句</span>
+                </div>
+                <h3>@dialogue.Title</h3>
+                <p>@dialogue.Scenario</p>
+                <div class="dialogue-card-roles">
+                    @foreach (var speaker in dialogue.Speakers)
+                    {
+                        <span class="speaker-chip is-@speaker.Color" lang="de">@speaker.Name<small>@speaker.Role</small></span>
+                    }
+                </div>
+                <div class="lesson-card-bottom">
+                    <span>@dialogue.Goal</span>
+                    <span class="round-arrow" aria-hidden="true">→</span>
+                </div>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    private List<DialogueSummaryDto>? _dialogues;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _dialogues = await Api.GetDialoguesAsync();
+            if (_dialogues is null || _dialogues.Count == 0)
+            {
+                throw new InvalidOperationException("课程里还没有场景对话。");
+            }
+        }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+        }
+    }
+}

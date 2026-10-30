@@ -1,0 +1,101 @@
+@page "/lessons/{LessonId}"
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Components
+@using BeafSoup.Web.Services
+@inject LearningApiClient Api
+
+<PageTitle>@(_lesson?.Title ?? "课时") · BeafSoup</PageTitle>
+
+@if (_error is not null)
+{
+    <div class="state-card error-state"><h1>课时无法加载</h1><p>@_error</p></div>
+}
+else if (_lesson is null)
+{
+    <div class="loading-state"><span class="loading-dot"></span>正在整理本课内容…</div>
+}
+else
+{
+    <div class="lesson-breadcrumb"><a href="/">我的课程</a><span>/</span><span>第 @_lesson.Order 课</span></div>
+    <section class="lesson-heading">
+        <div>
+            <span class="eyebrow">LEKTION @_lesson.Order.ToString("00") · A0—A1</span>
+            <h1>@_lesson.Title</h1>
+            <p>@_lesson.Summary</p>
+        </div>
+        <a class="primary-button" href="practice/@_lesson.Id">练习本课 @_lesson.QuestionCount 题 <span>↗</span></a>
+    </section>
+
+    <section class="objectives-strip">
+        <strong>学完你能</strong>
+        <div>@foreach (var objective in _lesson.Objectives) { <span>@objective</span> }</div>
+    </section>
+
+    <section class="content-section">
+        <div class="section-heading">
+            <div><span class="eyebrow">WÖRTER</span><h2>先认识这些词</h2></div>
+            <span class="section-note">点击喇叭听词典原型发音</span>
+        </div>
+        <div class="vocabulary-grid">
+            @foreach (var word in _lesson.Vocabulary)
+            {
+                <article class="vocabulary-card">
+                    <div class="vocabulary-top"><span class="part-of-speech">@word.PartOfSpeech</span><AudioButton AudioUrl="@word.AudioUrl" Label="单词" Compact="true" /></div>
+                    <h3 lang="de">@word.Lemma</h3>
+                    <p>@word.Translation</p>
+                    @if (word.Gender is not null || word.Plural is not null)
+                    {
+                        <small class="word-facts">
+                            @if (word.Gender is not null) { <span>性：@word.Gender</span> }
+                            @if (word.Plural is not null) { <span>复数：@word.Plural</span> }
+                        </small>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(word.Note)) { <p class="word-note">@word.Note</p> }
+                    @if (word.Forms.Count > 0)
+                    {
+                        <details><summary>查看词形</summary>
+                            @foreach (var form in word.Forms) { <div class="word-form"><strong lang="de">@form.Form</strong><span>@form.Note</span></div> }
+                        </details>
+                    }
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="content-section sentence-section">
+        <div class="section-heading">
+            <div><span class="eyebrow">SÄTZE</span><h2>把词放进句子里</h2></div>
+            <span class="section-note">点击带下划线的词块，查看句中含义与形态</span>
+        </div>
+        <div class="sentence-list">
+            @foreach (var sentence in _lesson.Sentences)
+            {
+                <SentenceReader Sentence="sentence" Vocabulary="_lesson.Vocabulary" />
+            }
+        </div>
+    </section>
+
+    <aside class="grammar-note">
+        <span class="grammar-mark">i</span>
+        <div><strong>本课语法便签</strong><p>@_lesson.Grammar</p></div>
+    </aside>
+
+    <section class="lesson-cta">
+        <div><span class="eyebrow">BEREIT?</span><h2>用 @_lesson.QuestionCount 道题检查理解</h2><p>提交后立即查看答案和中文解析，重复练习会保留每一次记录。</p></div>
+        <a class="primary-button" href="practice/@_lesson.Id">开始练习 →</a>
+    </section>
+}
+
+@code {
+    [Parameter] public string LessonId { get; set; } = "";
+    private LessonDetailDto? _lesson;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _lesson = null;
+        _error = null;
+        try { _lesson = await Api.GetLessonAsync(LessonId); }
+        catch (Exception exception) { _error = exception.Message; }
+    }
+}

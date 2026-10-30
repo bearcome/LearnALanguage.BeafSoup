@@ -1,0 +1,23 @@
+﻿@inherits LayoutComponentBase
+
+<header class="site-header">
+    <a class="brand" href="/" aria-label="BeafSoup 首页">
+        <span class="brand-mark">B<span>/</span>S</span>
+        <span class="brand-copy"><strong>BeafSoup</strong><small>语言学习实验室</small></span>
+    </a>
+    <nav class="main-nav" aria-label="主导航">
+        <NavLink href="" Match="NavLinkMatch.All">我的课程</NavLink>
+        <NavLink href="dialogues">场景对话</NavLink>
+        <NavLink href="practice">完整题库</NavLink>
+    </nav>
+    <span class="level-chip">DE <span>A0—A1</span></span>
+</header>
+
+<main class="page-shell">
+    @Body
+</main>
+
+<footer class="site-footer">
+    <span>句子为线，词汇为点。</span>
+    <span>中文辅助 · 德语入门</span>
+</footer>

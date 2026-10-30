@@ -1,0 +1,72 @@
+@page "/practice"
+@page "/practice/{LessonId}"
+@using BeafSoup.Contracts
+@using BeafSoup.Web.Components
+@using BeafSoup.Web.Services
+@inject LearningApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>德语单选练习 · BeafSoup</PageTitle>
+
+@if (_error is not null)
+{
+    <div class="state-card error-state"><h1>练习无法加载</h1><p>@_error</p></div>
+}
+else if (_questions is null || _course is null)
+{
+    <div class="loading-state"><span class="loading-dot"></span>正在准备题目…</div>
+}
+else
+{
+    <section class="practice-heading">
+        <div>
+            <span class="eyebrow">ÜBUNG · SINGLE CHOICE</span>
+            <h1>@(LessonId is null ? "完整德语选择题" : _course.Lessons.FirstOrDefault(item => item.Id == LessonId)?.Title + " · 课时练习")</h1>
+            <p>每题只有一个正确答案。提交后查看中文解析，不必害怕重来。</p>
+        </div>
+        <label class="lesson-filter">练习范围
+            <select value="@(LessonId ?? "")" @onchange="ChangeLesson">
+                <option value="">全部 @_course.Lessons.Count 课 · @_course.Lessons.Sum(lesson => lesson.QuestionCount) 题</option>
+                @foreach (var lesson in _course.Lessons) { <option value="@lesson.Id">第 @lesson.Order 课 · @lesson.Title</option> }
+            </select>
+        </label>
+    </section>
+    <QuestionPlayer Questions="_questions" CourseId="@_course.Id" LessonId="@LessonId" @key="LessonId" />
+}
+
+@code {
+    [Parameter] public string? LessonId { get; set; }
+    private CourseDetailDto? _course;
+    private List<QuestionDto>? _questions;
+    private string? _error;
+    private string? _loadedLesson;
+    private bool _courseLoaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedLesson == LessonId && _courseLoaded) return;
+        _loadedLesson = LessonId;
+        _questions = null;
+        _error = null;
+        try
+        {
+            if (!_courseLoaded)
+            {
+                var summary = await Api.GetCourseSummaryAsync() ?? throw new InvalidOperationException("没有可用课程。");
+                _course = await Api.GetCourseAsync(summary.Id);
+                _courseLoaded = true;
+            }
+            _questions = LessonId is null
+                ? await Api.GetCourseQuestionsAsync(_course!.Id)
+                : await Api.GetLessonQuestionsAsync(LessonId);
+            if (_questions is null || _questions.Count == 0)
+            {
+                throw new InvalidOperationException("这个范围还没有可练习的题目。");
+            }
+        }
+        catch (Exception exception) { _error = exception.Message; }
+    }
+
+    private void ChangeLesson(ChangeEventArgs args) =>
+        Navigation.NavigateTo(string.IsNullOrEmpty(args.Value?.ToString()) ? "practice" : $"practice/{args.Value}");
+}
